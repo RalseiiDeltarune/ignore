@@ -274,4 +274,4 @@ table.insert(activeConnections, RunService.RenderStepped:Connect(function()
 	end
 end))
 
-print("Utility Script loaded successfully with Anti-Cheat Velocity Speed Bypass!")
+print("Loaded have fun bro :)")
