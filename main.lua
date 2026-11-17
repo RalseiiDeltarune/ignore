@@ -1,8 +1,9 @@
 -- ==========================================
 -- AUTO-CLEANUP (Removes old script instance)
 -- ==========================================
-if getgenv().ActiveScriptCleanup then
-	pcall(getgenv().ActiveScriptCleanup)
+local _env = (type(getgenv) == "function" and getgenv()) or _G
+if _env and type(_env.ActiveScriptCleanup) == "function" then
+	pcall(_env.ActiveScriptCleanup)
 end
 
 local activeConnections = {}
@@ -47,7 +48,9 @@ local function cleanup()
 	print("Previous script instance cleaned up!")
 end
 
-getgenv().ActiveScriptCleanup = cleanup
+if _env then
+	_env.ActiveScriptCleanup = cleanup
+end
 
 -- ==========================================
 -- FILE-BASED DEFAULT WALKSPEED LOGGING
