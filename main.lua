@@ -8,7 +8,7 @@ end
 
 local activeConnections = {}
 local lightParts = {}
-local espData = {}  -- per-model ESP Drawing data
+local espData = {}
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -20,45 +20,26 @@ local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
 -- ==========================================
--- THEME (matches SpentHub palette)
+-- THEME
 -- ==========================================
 local Theme = {
-	ACCENT         = Color3.fromRGB(255, 182, 193),
-	HP_HIGH        = Color3.fromRGB(80, 255, 100),
-	HP_LOW         = Color3.fromRGB(255, 60, 60),
-	NAME_COLOR     = Color3.fromRGB(255, 255, 255),
-	TRACE_COLOR    = Color3.fromRGB(255, 255, 255),
-	TARGET_LOCK    = Color3.fromRGB(255, 200, 220),
-	RING_IDLE      = Color3.fromRGB(255, 255, 255),
-	HP_BG          = Color3.fromRGB(20, 20, 20),
+	ACCENT      = Color3.fromRGB(255, 182, 193),
+	NAME_COLOR  = Color3.fromRGB(255, 255, 255),
+	TRACE_COLOR = Color3.fromRGB(255, 255, 255),
+	HP_BG       = Color3.fromRGB(20, 20, 20),
 }
 
 -- ==========================================
 -- ESP SETTINGS
 -- ==========================================
 local ESPSettings = {
-	Enabled      = true,
-	ShowName     = true,
-	ShowHealth   = true,
-	ShowTrace    = false,
+	Enabled       = true,
+	ShowName      = true,
+	ShowHealth    = true,
+	ShowTrace     = false,
 	ShowHighlight = true,
-	MaxDistance  = 1500,
-	FOVVisible   = true,
-	FOVRadius    = 350,
+	MaxDistance   = 1500,
 }
-
--- ==========================================
--- FOV CIRCLE
--- ==========================================
-local fov_circle = Drawing.new("Circle")
-fov_circle.Thickness  = 1.5
-fov_circle.NumSides   = 100
-fov_circle.Radius     = ESPSettings.FOVRadius
-fov_circle.Filled     = false
-fov_circle.Visible    = false
-fov_circle.ZIndex     = 999
-fov_circle.Transparency = 0.9
-fov_circle.Color      = Theme.RING_IDLE
 
 -- ==========================================
 -- CLEANUP
@@ -85,19 +66,15 @@ local function cleanup()
 	end
 	lightParts = {}
 
-	-- destroy all ESP entries
-	for model, _ in pairs(espData) do
+	for model in pairs(espData) do
 		removeESPEntry(model)
 	end
 
-	-- remove any leftover legacy ESP objects
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if obj.Name == "CustomESP_Highlight" or obj.Name == "CustomESP_Billboard" then
 			obj:Destroy()
 		end
 	end
-
-	pcall(function() fov_circle:Remove() end)
 
 	camera.CameraType = Enum.CameraType.Custom
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -113,7 +90,7 @@ if _env then _env.ActiveScriptCleanup = cleanup end
 -- ==========================================
 -- FILE-BASED DEFAULT WALKSPEED LOGGING
 -- ==========================================
-local fileName    = "Xeno_GameDefaultSpeed.txt"
+local fileName     = "Xeno_GameDefaultSpeed.txt"
 local defaultSpeed = 16
 
 local function fetchAndSaveDefault()
@@ -124,16 +101,9 @@ local function fetchAndSaveDefault()
 		if not pcall(function() return isfile and isfile(fileName) end) or not isfile(fileName) then
 			pcall(function() writefile(fileName, tostring(currentDefault)) end)
 			defaultSpeed = currentDefault
-			print("[SpeedLogger] Logged new default speed to file: " .. tostring(currentDefault))
 		else
-			local success, content = pcall(readfile, fileName)
-			if success and content then
-				local val = tonumber(content)
-				defaultSpeed = val and val or currentDefault
-				print("[SpeedLogger] Loaded default speed from file: " .. tostring(defaultSpeed))
-			else
-				defaultSpeed = currentDefault
-			end
+			local ok, content = pcall(readfile, fileName)
+			defaultSpeed = (ok and tonumber(content)) or currentDefault
 		end
 	end
 end
@@ -141,7 +111,7 @@ end
 task.spawn(fetchAndSaveDefault)
 
 -- ==========================================
--- MAIN SCRIPT SETUP
+-- CHARACTER TRACKING
 -- ==========================================
 local character = player.Character or player.CharacterAdded:Wait()
 table.insert(activeConnections, player.CharacterAdded:Connect(function(char)
@@ -158,43 +128,42 @@ local maxDistance  = 800
 local spacing      = 110
 
 for dist = spacing, maxDistance, spacing do
-	table.insert(lightOffsets, Vector3.new( dist,  6,    0))
-	table.insert(lightOffsets, Vector3.new(-dist,  6,    0))
-	table.insert(lightOffsets, Vector3.new(   0,  6,  dist))
-	table.insert(lightOffsets, Vector3.new(   0,  6, -dist))
-	table.insert(lightOffsets, Vector3.new( dist,  6,  dist))
-	table.insert(lightOffsets, Vector3.new(-dist,  6,  dist))
-	table.insert(lightOffsets, Vector3.new( dist,  6, -dist))
-	table.insert(lightOffsets, Vector3.new(-dist,  6, -dist))
+	table.insert(lightOffsets, Vector3.new( dist, 6,    0))
+	table.insert(lightOffsets, Vector3.new(-dist, 6,    0))
+	table.insert(lightOffsets, Vector3.new(    0, 6,  dist))
+	table.insert(lightOffsets, Vector3.new(    0, 6, -dist))
+	table.insert(lightOffsets, Vector3.new( dist, 6,  dist))
+	table.insert(lightOffsets, Vector3.new(-dist, 6,  dist))
+	table.insert(lightOffsets, Vector3.new( dist, 6, -dist))
+	table.insert(lightOffsets, Vector3.new(-dist, 6, -dist))
 end
 
 local function clearFogAndAtmosphere()
 	Lighting.FogEnd   = 9e9
 	Lighting.FogStart = 0
-	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-	if atmosphere then atmosphere:Destroy() end
+	local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atm then atm:Destroy() end
 	table.insert(activeConnections, Lighting.ChildAdded:Connect(function(child)
 		if child:IsA("Atmosphere") then child:Destroy() end
 	end))
 end
 
 local function enableLight()
-	if #lightParts == 0 then
-		clearFogAndAtmosphere()
-		for _, offset in ipairs(lightOffsets) do
-			local lightPart = Instance.new("Part")
-			lightPart.Size        = Vector3.new(1, 1, 1)
-			lightPart.Transparency = 1
-			lightPart.Anchored    = true
-			lightPart.CanCollide  = false
-			local pointLight = Instance.new("PointLight")
-			pointLight.Brightness = 1.5
-			pointLight.Range      = 120
-			pointLight.Color      = Color3.fromRGB(255, 255, 255)
-			pointLight.Parent     = lightPart
-			lightPart.Parent = Workspace
-			table.insert(lightParts, {Part = lightPart, Offset = offset})
-		end
+	if #lightParts > 0 then return end
+	clearFogAndAtmosphere()
+	for _, offset in ipairs(lightOffsets) do
+		local part = Instance.new("Part")
+		part.Size        = Vector3.new(1, 1, 1)
+		part.Transparency = 1
+		part.Anchored    = true
+		part.CanCollide  = false
+		local pl = Instance.new("PointLight")
+		pl.Brightness = 1.5
+		pl.Range      = 120
+		pl.Color      = Color3.fromRGB(255, 255, 255)
+		pl.Parent     = part
+		part.Parent = Workspace
+		table.insert(lightParts, {Part = part, Offset = offset})
 	end
 end
 
@@ -206,54 +175,54 @@ local function disableLight()
 end
 
 -- ==========================================
--- 2. NPC ESP — SpentHub style
+-- 2. NPC ESP
 -- ==========================================
 local targetNames = {
-	"ai_arsonist", "ai_bombardier", "ai_friendlytank",
-	"ai_rifleman", "ai_sniper", "ai_stormtrooper", "ai_tank", "ai_zombie", "ai_officer"
+	ai_arsonist=true, ai_bombardier=true, ai_friendlytank=true,
+	ai_rifleman=true, ai_sniper=true, ai_stormtrooper=true,
+	ai_tank=true, ai_zombie=true, ai_officer=true
 }
 
-local function isTargetModel(model)
-	if not model:IsA("Model") then return false end
-	for _, name in ipairs(targetNames) do
-		if model.Name == name then return true end
-	end
-	return false
+-- Pre-computed HP color table: index 0–100 → Color3
+-- Avoids per-frame fromRGB math for 40 NPCs
+local hpColors = {}
+for i = 0, 100 do
+	local t  = i / 100
+	local r  = math.floor(255 * (1 - t))
+	local g  = math.floor(255 * t)
+	hpColors[i] = Color3.fromRGB(r, g, 40)
 end
 
--- Creates the Drawing + Highlight bundle for one NPC model
 local function createESPEntry(model)
 	local d = {}
 
-	-- name label
 	d.name            = Drawing.new("Text")
 	d.name.Visible    = false
-	d.name.Font       = 2          -- monospace, matches SpentHub
+	d.name.Font       = 2
 	d.name.Center     = true
 	d.name.Outline    = true
 	d.name.ZIndex     = 10
+	d.name.Color      = Theme.NAME_COLOR  -- set once, never changes
 
-	-- HP bar background
 	d.hpbarbg         = Drawing.new("Square")
 	d.hpbarbg.Visible = false
 	d.hpbarbg.Filled  = true
 	d.hpbarbg.Thickness = 0
 	d.hpbarbg.ZIndex  = 10
+	d.hpbarbg.Color   = Theme.HP_BG       -- set once, never changes
 
-	-- HP bar fill
 	d.hpbar           = Drawing.new("Square")
 	d.hpbar.Visible   = false
 	d.hpbar.Filled    = true
 	d.hpbar.Thickness = 0
 	d.hpbar.ZIndex    = 11
 
-	-- trace line
 	d.trace           = Drawing.new("Line")
 	d.trace.Visible   = false
 	d.trace.ZIndex    = 9
 	d.trace.Thickness = 1
+	d.trace.Color     = Theme.TRACE_COLOR  -- set once, never changes
 
-	-- highlight (AlwaysOnTop — sees through walls, identical to SpentHub fix)
 	d.hl              = Instance.new("Highlight")
 	d.hl.FillColor    = Theme.ACCENT
 	d.hl.OutlineColor = Theme.ACCENT
@@ -261,82 +230,90 @@ local function createESPEntry(model)
 	d.hl.OutlineTransparency = 0
 	d.hl.DepthMode   = Enum.HighlightDepthMode.AlwaysOnTop
 	d.hl.Adornee     = model
-	d.hl.Enabled      = false
-	d.hl.Parent       = model
+	d.hl.Enabled     = false
+	d.hl.Parent      = model
+
+	-- cache the parts we need every tick — avoids FindFirstChild every frame
+	d.hrp      = model:FindFirstChild("HumanoidRootPart")
+	d.head     = model:FindFirstChild("Head")
+	d.humanoid = model:FindFirstChildOfClass("Humanoid")
 
 	espData[model] = d
-	return d
 end
 
 local function hideESPEntry(d)
-	if not d then return end
 	d.name.Visible    = false
 	d.hpbar.Visible   = false
 	d.hpbarbg.Visible = false
 	d.trace.Visible   = false
-	if d.hl then d.hl.Enabled = false end
+	d.hl.Enabled      = false
 end
 
--- Called every ESP tick for one NPC model
-local function updateESPEntry(model, d)
-	local humanoid  = model:FindFirstChildOfClass("Humanoid")
-	local hrp       = model:FindFirstChild("HumanoidRootPart")
-	local head      = model:FindFirstChild("Head")
+-- Viewport size cached — read once per frame outside the loop
+local vpX, vpY = 0, 0
 
-	if not humanoid or not hrp or humanoid.Health <= 0 then
+local function updateESPEntry(d)
+	local hrp      = d.hrp
+	local humanoid = d.humanoid
+
+	-- dead or missing
+	if not hrp or not hrp.Parent or not humanoid or humanoid.Health <= 0 then
 		hideESPEntry(d)
 		return
 	end
 
-	local camPos   = camera.CFrame.Position
-	local dist     = (hrp.Position - camPos).Magnitude
+	local camPos = camera.CFrame.Position
+	local hrpPos = hrp.Position
 
-	if dist > ESPSettings.MaxDistance then
+	-- distance cull — cheapest check first
+	local dx = hrpPos.X - camPos.X
+	local dy = hrpPos.Y - camPos.Y
+	local dz = hrpPos.Z - camPos.Z
+	local distSq = dx*dx + dy*dy + dz*dz
+	local maxSq  = ESPSettings.MaxDistance * ESPSettings.MaxDistance
+	if distSq > maxSq then
 		hideESPEntry(d)
 		return
 	end
+	local dist = math.sqrt(distSq)
 
-	-- world-to-viewport for head and feet
-	local headPos  = head and head.Position or (hrp.Position + Vector3.new(0, 2.5, 0))
-	local feetPos  = hrp.Position - Vector3.new(0, 2.8, 0)
-	local hVec3    = camera:WorldToViewportPoint(headPos)
-	local fVec3    = camera:WorldToViewportPoint(feetPos)
+	-- world-to-viewport (two calls, unavoidable)
+	local headPos = d.head and d.head.Position or (hrpPos + Vector3.new(0, 2.5, 0))
+	local hVec3   = camera:WorldToViewportPoint(headPos)
+	local fVec3   = camera:WorldToViewportPoint(hrpPos - Vector3.new(0, 2.8, 0))
 
 	if hVec3.Z <= 0 and fVec3.Z <= 0 then
 		hideESPEntry(d)
 		return
 	end
 
-	local vp   = camera.ViewportSize
-	local hs   = Vector2.new(hVec3.X, hVec3.Y)
-	local fs   = Vector2.new(fVec3.X, fVec3.Y)
-	local refX = hVec3.Z > 0 and hs.X or fs.X
-	local refY = hVec3.Z > 0 and hs.Y or fs.Y
+	local hx = hVec3.X
+	local hy = hVec3.Y
+	local fx = fVec3.X
+	local fy = fVec3.Y
 
-	-- cull if totally off screen
-	if refX < -200 or refX > vp.X + 200 or refY < -200 or refY > vp.Y + 200 then
+	-- screen cull
+	local refX = hVec3.Z > 0 and hx or fx
+	local refY = hVec3.Z > 0 and hy or fy
+	if refX < -200 or refX > vpX + 200 or refY < -200 or refY > vpY + 200 then
 		hideESPEntry(d)
 		return
 	end
 
-	local bh   = math.clamp(math.abs(hs.Y - fs.Y), 12, 400)
-	local topY = math.min(hs.Y, fs.Y)
+	-- box geometry
+	local bh   = math.clamp(math.abs(hy - fy), 12, 400)
+	local topY = math.min(hy, fy)
 	local botY = topY + bh
-	local midX = hs.X
+	local midX = hx
 
 	-- ── HIGHLIGHT ──────────────────────────────────────────
-	if ESPSettings.ShowHighlight then
-		d.hl.Enabled = true
-	else
-		d.hl.Enabled = false
-	end
+	d.hl.Enabled = ESPSettings.ShowHighlight
 
 	-- ── NAME ───────────────────────────────────────────────
 	if ESPSettings.ShowName then
 		d.name.Visible   = true
-		d.name.Text      = string.format("%s [%d]", model.Name, math.floor(dist))
-		d.name.Color     = Theme.NAME_COLOR
-		d.name.Size      = math.clamp(13 - dist / 120, 8, 14)
+		d.name.Text      = string.format("%s [%d]", d.hrp.Parent.Name, math.floor(dist))
+		d.name.Size      = math.clamp(13 - dist * 0.00833, 8, 14)  -- /120 precomputed
 		d.name.Position  = Vector2.new(midX, topY - 16)
 	else
 		d.name.Visible = false
@@ -346,21 +323,17 @@ local function updateESPEntry(model, d)
 	if ESPSettings.ShowHealth then
 		local pct  = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
 		local bwd  = math.max(3, math.min(6, bh * 0.06))
-		-- sit bar to the left of the bounding box
-		local bx   = midX - (bh * 0.275) - bwd - 4
+		local bx   = midX - bh * 0.275 - bwd - 4
 
-		d.hpbarbg.Visible   = true
-		d.hpbarbg.Position  = Vector2.new(bx, topY)
-		d.hpbarbg.Size      = Vector2.new(bwd, bh)
-		d.hpbarbg.Color     = Theme.HP_BG
+		d.hpbarbg.Visible  = true
+		d.hpbarbg.Position = Vector2.new(bx, topY)
+		d.hpbarbg.Size     = Vector2.new(bwd, bh)
 
-		local fillH         = bh * pct
-		local r2            = math.floor(255 * (1 - pct))
-		local g2            = math.floor(255 * pct)
-		d.hpbar.Visible     = true
-		d.hpbar.Position    = Vector2.new(bx, botY - fillH)
-		d.hpbar.Size        = Vector2.new(bwd, fillH)
-		d.hpbar.Color       = Color3.fromRGB(r2, g2, 40)
+		local fillH = bh * pct
+		d.hpbar.Visible   = true
+		d.hpbar.Position  = Vector2.new(bx, botY - fillH)
+		d.hpbar.Size      = Vector2.new(bwd, fillH)
+		d.hpbar.Color     = hpColors[math.floor(pct * 100)]  -- LUT, zero alloc
 	else
 		d.hpbar.Visible   = false
 		d.hpbarbg.Visible = false
@@ -369,17 +342,17 @@ local function updateESPEntry(model, d)
 	-- ── TRACE ──────────────────────────────────────────────
 	if ESPSettings.ShowTrace then
 		d.trace.Visible = true
-		d.trace.From    = Vector2.new(vp.X / 2, vp.Y)
+		d.trace.From    = Vector2.new(vpX * 0.5, vpY)
 		d.trace.To      = Vector2.new(midX, botY)
-		d.trace.Color   = Theme.TRACE_COLOR
 	else
 		d.trace.Visible = false
 	end
 end
 
--- Bootstrap ESP on models already in Workspace
+-- Bootstrap
 local function initESP(model)
-	if not isTargetModel(model) then return end
+	if not targetNames[model.Name] then return end
+	if not model:IsA("Model") then return end
 	if not espData[model] then createESPEntry(model) end
 end
 
@@ -397,47 +370,72 @@ table.insert(activeConnections, Workspace.ChildRemoved:Connect(function(child)
 end))
 
 -- ==========================================
--- INPUT & EVENT LISTENERS
+-- INPUT
 -- ==========================================
-local speedToggled   = false
+local speedToggled    = false
 local speedMultiplier = 1.4
 
 table.insert(activeConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.Quote then
 		lightToggled = not lightToggled
-		if lightToggled then
-			print("Personal Light 8-Way Grid + Fog Remover: ON")
-			enableLight()
-		else
-			print("Personal Light Grid: OFF")
-			disableLight()
-		end
+		if lightToggled then enableLight() else disableLight() end
+		print("Light Grid: " .. (lightToggled and "ON" or "OFF"))
 	elseif input.KeyCode == Enum.KeyCode.Comma then
 		speedToggled = not speedToggled
-		print(string.format("CFrame Speed Boost Toggled: %s", tostring(speedToggled)))
+		print("CFrame Speed Boost: " .. tostring(speedToggled))
 	end
 end))
 
 -- ==========================================
 -- RENDERSTEPPED — lights + speed + ESP
+-- Throttle ESP to 20hz, everything else runs every frame
 -- ==========================================
-local espLastTick = 0
-local ESP_INTERVAL = 0.05  -- 20hz, same as SpentHub
+local espAccum    = 0
+local ESP_INTERVAL = 0.05  -- 20hz
+
+-- Pre-build iteration list to avoid next() overhead on espData every frame
+local espList = {}
+
+local function rebuildEspList()
+	table.clear(espList)
+	for model, d in pairs(espData) do
+		espList[#espList + 1] = d
+	end
+end
+
+-- Rebuild the flat list whenever a model is added/removed
+-- (ChildAdded/ChildRemoved already fires initESP/removeESPEntry;
+--  we just hook into those moments)
+local _origCreate = createESPEntry
+createESPEntry = function(model)
+	_origCreate(model)
+	espList[#espList + 1] = espData[model]
+end
+
+local _origRemove = removeESPEntry
+removeESPEntry = function(model)
+	_origRemove(model)
+	rebuildEspList()  -- cheap, only on remove events not every frame
+end
 
 table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
 
-	-- light grid follow player
-	if lightToggled and #lightParts > 0 and character and character:FindFirstChild("HumanoidRootPart") then
-		local hrp = character.HumanoidRootPart
-		for _, data in ipairs(lightParts) do
-			if data.Part then
-				data.Part.CFrame = CFrame.new(hrp.Position + data.Offset)
+	-- ── LIGHTS ─────────────────────────────────────────────
+	if lightToggled and #lightParts > 0 and character then
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local pos = hrp.Position
+			for i = 1, #lightParts do
+				local ld = lightParts[i]
+				if ld.Part then
+					ld.Part.CFrame = CFrame.new(pos + ld.Offset)
+				end
 			end
 		end
 	end
 
-	-- CFrame speed bypass
+	-- ── SPEED ──────────────────────────────────────────────
 	if speedToggled and character then
 		local humanoid = character:FindFirstChild("Humanoid")
 		local hrp      = character:FindFirstChild("HumanoidRootPart")
@@ -445,39 +443,28 @@ table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
 			humanoid.WalkSpeed = defaultSpeed
 			local moveDir = humanoid.MoveDirection
 			if moveDir.Magnitude > 0 then
-				local extraSpeed = (defaultSpeed * (speedMultiplier - 1)) * dt
-				hrp.CFrame = hrp.CFrame + (moveDir * extraSpeed)
+				hrp.CFrame = hrp.CFrame + moveDir * ((defaultSpeed * (speedMultiplier - 1)) * dt)
 			end
 		end
 	end
 
-	-- FOV circle (screen center)
-	if ESPSettings.FOVVisible then
-		fov_circle.Visible  = true
-		fov_circle.Radius   = ESPSettings.FOVRadius
-		fov_circle.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-		fov_circle.Color    = Theme.RING_IDLE
-	else
-		fov_circle.Visible = false
+	-- ── ESP (throttled) ────────────────────────────────────
+	espAccum = espAccum + dt
+	if espAccum < ESP_INTERVAL then return end
+	espAccum = 0
+
+	if not ESPSettings.Enabled then
+		for i = 1, #espList do hideESPEntry(espList[i]) end
+		return
 	end
 
-	-- ESP tick (throttled)
-	local now = tick()
-	if now - espLastTick >= ESP_INTERVAL then
-		espLastTick = now
-		if ESPSettings.Enabled then
-			for model, d in pairs(espData) do
-				if model.Parent then
-					pcall(updateESPEntry, model, d)
-				else
-					removeESPEntry(model)
-				end
-			end
-		else
-			for _, d in pairs(espData) do
-				hideESPEntry(d)
-			end
-		end
+	-- cache viewport once per ESP tick, not per NPC
+	local vp = camera.ViewportSize
+	vpX = vp.X
+	vpY = vp.Y
+
+	for i = 1, #espList do
+		updateESPEntry(espList[i])
 	end
 end))
 
