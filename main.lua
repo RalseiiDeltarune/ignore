@@ -153,7 +153,7 @@ local function disableLight()
 	lightParts = {}
 end
 
--- 2. NPC ESP (Includes ai_zombie and all specified AI types)
+-- 2. NPC ESP
 local targetNames = {
 	"ai_arsonist", "ai_bombardier", "ai_friendlytank",
 	"ai_rifleman", "ai_sniper", "ai_stormtrooper", "ai_tank", "ai_zombie"
@@ -212,12 +212,11 @@ end
 -- INPUT & EVENT LISTENERS
 -- ==========================================
 local speedToggled = false
-local speedMultiplier = 1.35 
+local speedMultiplier = 1.4 -- 40% speed boost
 
 table.insert(activeConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
-	-- Toggle Light Grid with ' (Quote)
 	if input.KeyCode == Enum.KeyCode.Quote then
 		lightToggled = not lightToggled
 		if lightToggled then
@@ -228,10 +227,9 @@ table.insert(activeConnections, UserInputService.InputBegan:Connect(function(inp
 			disableLight()
 		end
 		
-	-- Toggle Speed Multiplier using , (Comma)
 	elseif input.KeyCode == Enum.KeyCode.Comma then
 		speedToggled = not speedToggled
-		print(string.format("Speed Multiplier Toggled: %s", tostring(speedToggled)))
+		print(string.format("CFrame Speed Boost Toggled: %s", tostring(speedToggled)))
 	end
 end))
 
@@ -240,9 +238,8 @@ table.insert(activeConnections, Workspace.ChildAdded:Connect(function(child)
 	setupESP(child)
 end))
 
--- Handle Light Grid positioning & stable speed scaling every frame
-table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-	-- Light Grid updates
+-- Handle Light Grid & Clean CFrame-based Speed Offset
+table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
 	if lightToggled and #lightParts > 0 and character and character:FindFirstChild("HumanoidRootPart") then
 		local hrp = character.HumanoidRootPart
 		for _, data in ipairs(lightParts) do
@@ -252,14 +249,18 @@ table.insert(activeConnections, RunService.RenderStepped:Connect(function()
 		end
 	end
 	
-	-- Stable Speed Modifier (Scales standard WalkSpeed safely without breaking friction)
-	if character then
+	-- CFrame Movement Translation Bypass (Guarantees immediate stop & working speed increase)
+	if speedToggled and character then
 		local humanoid = character:FindFirstChild("Humanoid")
-		if humanoid then
-			if speedToggled then
-				humanoid.WalkSpeed = defaultSpeed * speedMultiplier
-			else
-				humanoid.WalkSpeed = defaultSpeed
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		
+		if humanoid and hrp then
+			humanoid.WalkSpeed = defaultSpeed -- Keep server property normal
+			
+			local moveDir = humanoid.MoveDirection
+			if moveDir.Magnitude > 0 then
+				local extraSpeed = (defaultSpeed * (speedMultiplier - 1)) * dt
+				hrp.CFrame = hrp.CFrame + (moveDir * extraSpeed)
 			end
 		end
 	end
