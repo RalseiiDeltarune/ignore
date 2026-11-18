@@ -153,7 +153,7 @@ local function disableLight()
 	lightParts = {}
 end
 
--- 2. NPC ESP (Includes ai_zombie and all specified AI types)
+-- 2. NPC ESP
 local targetNames = {
 	"ai_arsonist", "ai_bombardier", "ai_friendlytank",
 	"ai_rifleman", "ai_sniper", "ai_stormtrooper", "ai_tank", "ai_zombie"
@@ -209,15 +209,14 @@ for _, child in ipairs(Workspace:GetChildren()) do
 end
 
 -- ==========================================
--- INPUT & EVENT LISTENERS (WITH AC BYPASS)
+-- INPUT & EVENT LISTENERS
 -- ==========================================
 local speedToggled = false
-local speedMultiplier = 1.35 -- 35% speed increase; lower if rubber-banding occurs
+local speedMultiplier = 1.35 
 
 table.insert(activeConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
-	-- Toggle Light Grid with ' (Quote)
 	if input.KeyCode == Enum.KeyCode.Quote then
 		lightToggled = not lightToggled
 		if lightToggled then
@@ -228,7 +227,6 @@ table.insert(activeConnections, UserInputService.InputBegan:Connect(function(inp
 			disableLight()
 		end
 		
-	-- Toggle Safe Velocity Speed Bypass using , (Comma)
 	elseif input.KeyCode == Enum.KeyCode.Comma then
 		speedToggled = not speedToggled
 		print(string.format("Velocity Speed Bypass Toggled: %s", tostring(speedToggled)))
@@ -240,9 +238,8 @@ table.insert(activeConnections, Workspace.ChildAdded:Connect(function(child)
 	setupESP(child)
 end))
 
--- Handle Light Grid positioning & Velocity speed bypass safely every frame
+-- Handle Light Grid & Clean Speed Modification
 table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-	-- Light Grid updates
 	if lightToggled and #lightParts > 0 and character and character:FindFirstChild("HumanoidRootPart") then
 		local hrp = character.HumanoidRootPart
 		for _, data in ipairs(lightParts) do
@@ -252,25 +249,23 @@ table.insert(activeConnections, RunService.RenderStepped:Connect(function()
 		end
 	end
 	
-	-- Anti-Cheat Safe Speed Bypass
 	if speedToggled and character then
 		local humanoid = character:FindFirstChild("Humanoid")
 		local hrp = character:FindFirstChild("HumanoidRootPart")
 		
 		if humanoid and hrp then
-			-- Keep Humanoid.WalkSpeed normal so server-side property checks don't flag it
 			humanoid.WalkSpeed = defaultSpeed
 			
-			-- If moving, override assembly velocity slightly to speed up movement
-			if humanoid.MoveDirection.Magnitude > 0 then
-				local currentVelocity = hrp.AssemblyLinearVelocity
-				local targetDir = humanoid.MoveDirection
+			local moveDir = humanoid.MoveDirection
+			if moveDir.Magnitude > 0 then
+				-- Only modify horizontal momentum cleanly when actively moving, allowing natural stop mechanics
+				local currentVel = hrp.AssemblyLinearVelocity
 				local boostSpeed = defaultSpeed * speedMultiplier
 				
 				hrp.AssemblyLinearVelocity = Vector3.new(
-					targetDir.X * boostSpeed,
-					currentVelocity.Y, -- Preserve vertical/jumping velocity
-					targetDir.Z * boostSpeed
+					moveDir.X * boostSpeed,
+					currentVel.Y,
+					moveDir.Z * boostSpeed
 				)
 			end
 		end
