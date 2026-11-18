@@ -153,7 +153,7 @@ local function disableLight()
 	lightParts = {}
 end
 
--- 2. NPC ESP
+-- 2. NPC ESP (Includes ai_zombie and all specified AI types)
 local targetNames = {
 	"ai_arsonist", "ai_bombardier", "ai_friendlytank",
 	"ai_rifleman", "ai_sniper", "ai_stormtrooper", "ai_tank", "ai_zombie"
@@ -217,6 +217,7 @@ local speedMultiplier = 1.35
 table.insert(activeConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
+	-- Toggle Light Grid with ' (Quote)
 	if input.KeyCode == Enum.KeyCode.Quote then
 		lightToggled = not lightToggled
 		if lightToggled then
@@ -227,9 +228,10 @@ table.insert(activeConnections, UserInputService.InputBegan:Connect(function(inp
 			disableLight()
 		end
 		
+	-- Toggle Speed Multiplier using , (Comma)
 	elseif input.KeyCode == Enum.KeyCode.Comma then
 		speedToggled = not speedToggled
-		print(string.format("Velocity Speed Bypass Toggled: %s", tostring(speedToggled)))
+		print(string.format("Speed Multiplier Toggled: %s", tostring(speedToggled)))
 	end
 end))
 
@@ -238,8 +240,9 @@ table.insert(activeConnections, Workspace.ChildAdded:Connect(function(child)
 	setupESP(child)
 end))
 
--- Handle Light Grid & Clean Speed Modification
+-- Handle Light Grid positioning & stable speed scaling every frame
 table.insert(activeConnections, RunService.RenderStepped:Connect(function()
+	-- Light Grid updates
 	if lightToggled and #lightParts > 0 and character and character:FindFirstChild("HumanoidRootPart") then
 		local hrp = character.HumanoidRootPart
 		for _, data in ipairs(lightParts) do
@@ -249,24 +252,14 @@ table.insert(activeConnections, RunService.RenderStepped:Connect(function()
 		end
 	end
 	
-	if speedToggled and character then
+	-- Stable Speed Modifier (Scales standard WalkSpeed safely without breaking friction)
+	if character then
 		local humanoid = character:FindFirstChild("Humanoid")
-		local hrp = character:FindFirstChild("HumanoidRootPart")
-		
-		if humanoid and hrp then
-			humanoid.WalkSpeed = defaultSpeed
-			
-			local moveDir = humanoid.MoveDirection
-			if moveDir.Magnitude > 0 then
-				-- Only modify horizontal momentum cleanly when actively moving, allowing natural stop mechanics
-				local currentVel = hrp.AssemblyLinearVelocity
-				local boostSpeed = defaultSpeed * speedMultiplier
-				
-				hrp.AssemblyLinearVelocity = Vector3.new(
-					moveDir.X * boostSpeed,
-					currentVel.Y,
-					moveDir.Z * boostSpeed
-				)
+		if humanoid then
+			if speedToggled then
+				humanoid.WalkSpeed = defaultSpeed * speedMultiplier
+			else
+				humanoid.WalkSpeed = defaultSpeed
 			end
 		end
 	end
