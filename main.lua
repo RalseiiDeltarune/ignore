@@ -1,6 +1,5 @@
--- ==========================================
--- AUTO-CLEANUP (Removes old script instance)
--- ==========================================
+--hi ok so i dont care if you skid the script really i dont give a shi 
+--[![Reviewed on ScriptBlox](https://scriptblox.com/badge/whizzbang-Script-237135)](https://scriptblox.com/script/whizzbang-Script-237135)
 local _env = (type(getgenv) == "function" and getgenv()) or _G
 if _env and type(_env.ActiveScriptCleanup) == "function" then
 	pcall(_env.ActiveScriptCleanup)
