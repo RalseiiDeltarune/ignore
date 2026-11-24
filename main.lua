@@ -19,8 +19,9 @@ local speedOn = false
 local lightOn = false
 local aimbotOn = false
 local aiming = false
-local aimSmoothness = 0.35
-local aimFOV = 250
+local wallCheck = false
+local aimSmoothness = 0.5
+local aimFOV = 450
 
 local conns = {}
 local espData = {}
@@ -29,6 +30,7 @@ local fogCleared = false
 local lastLightPos = Vector3.new(0, -9e9, 0)
 
 local moveMouseRel = mousemoverel or (Input and Input.MouseMove)
+local moveMouseAbs = mousemoveabs
 
 local targets = {
 	ai_arsonist = true,
@@ -277,6 +279,7 @@ local function addESP(obj)
 end
 
 local function isVisible(part)
+	if not wallCheck then return true end
 	if not camera or not part then return false end
 	local origin = camera.CFrame.Position
 	local direction = part.Position - origin
@@ -292,20 +295,32 @@ local function isVisible(part)
 	return result == nil
 end
 
+local function getAimPoint(obj)
+	return obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+end
+
+local function getAnchorPos()
+	if UIS.MouseBehavior == Enum.MouseBehavior.LockCenter and camera then
+		local vp = camera.ViewportSize
+		return Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+	end
+	return UIS:GetMouseLocation()
+end
+
 local function getClosestTargetPart()
 	if not camera then return nil end
-	local mouseLoc = UIS:GetMouseLocation()
+	local anchor = getAnchorPos()
 	local bestPart = nil
 	local bestDist = aimFOV
 
 	for obj in pairs(espData) do
 		if enemyTargets[obj.Name] and obj.Parent then
 			local targetHum = obj:FindFirstChildOfClass("Humanoid")
-			local aimPart = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+			local aimPart = getAimPoint(obj)
 			if targetHum and targetHum.Health > 0 and aimPart and isVisible(aimPart) then
 				local screenPos, onScreen = camera:WorldToViewportPoint(aimPart.Position)
 				if onScreen and screenPos.Z > 0 then
-					local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
+					local dist = (Vector2.new(screenPos.X, screenPos.Y) - anchor).Magnitude
 					if dist < bestDist then
 						bestDist = dist
 						bestPart = aimPart
@@ -318,11 +333,13 @@ local function getClosestTargetPart()
 	return bestPart
 end
 
-for _, v in ipairs(Workspace:GetChildren()) do
-	addESP(v)
+for _, v in ipairs(Workspace:GetDescendants()) do
+	if targets[v.Name] then
+		addESP(v)
+	end
 end
 
-table.insert(conns, Workspace.ChildAdded:Connect(function(v)
+table.insert(conns, Workspace.DescendantAdded:Connect(function(v)
 	if targets[v.Name] then
 		task.wait(0.1)
 		addESP(v)
@@ -341,7 +358,7 @@ table.insert(conns, UIS.InputBegan:Connect(function(input, gpe)
 		print("Speed:", speedOn)
 	elseif input.KeyCode == Enum.KeyCode.Z then
 		aimbotOn = not aimbotOn
-		print("Aimbot:", aimbotOn)
+		print("Aimbot:", aimbotOn, "mousemoverel:", moveMouseRel ~= nil)
 	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 		aiming = true
 	end
@@ -360,16 +377,20 @@ table.insert(conns, RunService.RenderStepped:Connect(function(dt)
 		hrp.CFrame += hum.MoveDirection * boost
 	end
 
-	if aimbotOn and aiming and moveMouseRel and camera then
+	if aimbotOn and aiming and camera then
 		local targetPart = getClosestTargetPart()
 		if targetPart then
 			local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
 			if onScreen and screenPos.Z > 0 then
-				local mouseLoc = UIS:GetMouseLocation()
-				local deltaX = (screenPos.X - mouseLoc.X) * aimSmoothness
-				local deltaY = (screenPos.Y - mouseLoc.Y) * aimSmoothness
-				if math.abs(deltaX) > 0.25 or math.abs(deltaY) > 0.25 then
-					moveMouseRel(deltaX, deltaY)
+				local anchor = getAnchorPos()
+				local deltaX = (screenPos.X - anchor.X) * aimSmoothness
+				local deltaY = (screenPos.Y - anchor.Y) * aimSmoothness
+				if math.abs(deltaX) > 0.1 or math.abs(deltaY) > 0.1 then
+					if moveMouseRel then
+						pcall(moveMouseRel, deltaX, deltaY)
+					elseif moveMouseAbs then
+						pcall(moveMouseAbs, anchor.X + deltaX, anchor.Y + deltaY)
+					end
 				end
 			end
 		end
