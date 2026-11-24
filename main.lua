@@ -7,14 +7,20 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
 
 local lp = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
 local char, hrp, hum
 
 local baseSpeed = 10
 local speedMult = 1.4
 local speedOn = false
 local lightOn = false
+local aimbotOn = false
+local aiming = false
+local aimSmoothness = 0.35
+local aimFOV = 250
 
 local conns = {}
 local espData = {}
@@ -22,10 +28,23 @@ local lights = {}
 local fogCleared = false
 local lastLightPos = Vector3.new(0, -9e9, 0)
 
+local moveMouseRel = mousemoverel or (Input and Input.MouseMove)
+
 local targets = {
 	ai_arsonist = true,
 	ai_bombardier = true,
 	ai_friendlytank = true,
+	ai_officer = true,
+	ai_rifleman = true,
+	ai_sniper = true,
+	ai_stormtrooper = true,
+	ai_tank = true,
+	ai_zombie = true
+}
+
+local enemyTargets = {
+	ai_arsonist = true,
+	ai_bombardier = true,
 	ai_officer = true,
 	ai_rifleman = true,
 	ai_sniper = true,
@@ -46,6 +65,12 @@ end
 
 cacheCharacter(lp.Character or lp.CharacterAdded:Wait())
 table.insert(conns, lp.CharacterAdded:Connect(cacheCharacter))
+
+table.insert(conns, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+	if Workspace.CurrentCamera then
+		camera = Workspace.CurrentCamera
+	end
+end))
 
 env.CleanupOldScript = function()
 	for _, c in ipairs(conns) do
@@ -116,7 +141,7 @@ local function toggleLights(state)
 		if #lights == 0 then
 			local folder = Instance.new("Folder")
 			folder.Name = "Fullbright_Grid"
-			folder.Parent = workspace
+			folder.Parent = Workspace
 
 			for _, off in ipairs(offsets) do
 				local p = Instance.new("Part")
@@ -251,11 +276,53 @@ local function addESP(obj)
 	}
 end
 
-for _, v in ipairs(workspace:GetChildren()) do
+local function isVisible(part)
+	if not camera or not part then return false end
+	local origin = camera.CFrame.Position
+	local direction = part.Position - origin
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local ignore = {}
+	if char then table.insert(ignore, char) end
+	if part.Parent then table.insert(ignore, part.Parent) end
+	if #lights > 0 and lights[1].folder then table.insert(ignore, lights[1].folder) end
+	params.FilterDescendantsInstances = ignore
+
+	local result = Workspace:Raycast(origin, direction, params)
+	return result == nil
+end
+
+local function getClosestTargetPart()
+	if not camera then return nil end
+	local mouseLoc = UIS:GetMouseLocation()
+	local bestPart = nil
+	local bestDist = aimFOV
+
+	for obj in pairs(espData) do
+		if enemyTargets[obj.Name] and obj.Parent then
+			local targetHum = obj:FindFirstChildOfClass("Humanoid")
+			local aimPart = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+			if targetHum and targetHum.Health > 0 and aimPart and isVisible(aimPart) then
+				local screenPos, onScreen = camera:WorldToViewportPoint(aimPart.Position)
+				if onScreen and screenPos.Z > 0 then
+					local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
+					if dist < bestDist then
+						bestDist = dist
+						bestPart = aimPart
+					end
+				end
+			end
+		end
+	end
+
+	return bestPart
+end
+
+for _, v in ipairs(Workspace:GetChildren()) do
 	addESP(v)
 end
 
-table.insert(conns, workspace.ChildAdded:Connect(function(v)
+table.insert(conns, Workspace.ChildAdded:Connect(function(v)
 	if targets[v.Name] then
 		task.wait(0.1)
 		addESP(v)
@@ -272,6 +339,17 @@ table.insert(conns, UIS.InputBegan:Connect(function(input, gpe)
 	elseif input.KeyCode == Enum.KeyCode.Comma then
 		speedOn = not speedOn
 		print("Speed:", speedOn)
+	elseif input.KeyCode == Enum.KeyCode.Z then
+		aimbotOn = not aimbotOn
+		print("Aimbot:", aimbotOn)
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+		aiming = true
+	end
+end))
+
+table.insert(conns, UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		aiming = false
 	end
 end))
 
@@ -281,6 +359,21 @@ table.insert(conns, RunService.RenderStepped:Connect(function(dt)
 		local boost = (baseSpeed * (speedMult - 1)) * dt
 		hrp.CFrame += hum.MoveDirection * boost
 	end
+
+	if aimbotOn and aiming and moveMouseRel and camera then
+		local targetPart = getClosestTargetPart()
+		if targetPart then
+			local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+			if onScreen and screenPos.Z > 0 then
+				local mouseLoc = UIS:GetMouseLocation()
+				local deltaX = (screenPos.X - mouseLoc.X) * aimSmoothness
+				local deltaY = (screenPos.Y - mouseLoc.Y) * aimSmoothness
+				if math.abs(deltaX) > 0.25 or math.abs(deltaY) > 0.25 then
+					moveMouseRel(deltaX, deltaY)
+				end
+			end
+		end
+	end
 end))
 
 table.insert(conns, RunService.Heartbeat:Connect(function()
@@ -289,4 +382,4 @@ table.insert(conns, RunService.Heartbeat:Connect(function()
 	end
 end))
 
-print("Loaded optimized script :)")
+print("Loaded script :)")
