@@ -9,6 +9,10 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
+
 local lp = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local char, hrp, hum
@@ -20,6 +24,7 @@ local lightOn = false
 local aimbotOn = false
 local aiming = false
 local wallCheck = false
+local espOn = true
 local aimSmoothness = 0.5
 local aimFOV = 450
 
@@ -74,54 +79,21 @@ table.insert(conns, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(
 	end
 end))
 
-env.CleanupOldScript = function()
-	for _, c in ipairs(conns) do
-		c:Disconnect()
-	end
-	table.clear(conns)
+local function removeESP(obj)
+	local data = espData[obj]
+	if not data then return end
+	if data.conn then data.conn:Disconnect() end
+	if data.destroyingConn then data.destroyingConn:Disconnect() end
+	if data.hl then data.hl:Destroy() end
+	if data.bb then data.bb:Destroy() end
+	espData[obj] = nil
+end
 
-	for obj, data in pairs(espData) do
-		if data.conn then data.conn:Disconnect() end
-		if data.destroyingConn then data.destroyingConn:Disconnect() end
-		if data.hl then data.hl:Destroy() end
-		if data.bb then data.bb:Destroy() end
+local function clearAllESP()
+	for obj in pairs(espData) do
+		removeESP(obj)
 	end
 	table.clear(espData)
-
-	if #lights > 0 and lights[1].folder then
-		lights[1].folder:Destroy()
-	end
-	for _, v in ipairs(lights) do
-		if v.part then v.part:Destroy() end
-	end
-	table.clear(lights)
-end
-
-local offsets = { Vector3.new(0, 6, 0) }
-for d = 110, 800, 110 do
-	table.insert(offsets, Vector3.new(d, 6, 0))
-	table.insert(offsets, Vector3.new(-d, 6, 0))
-	table.insert(offsets, Vector3.new(0, 6, d))
-	table.insert(offsets, Vector3.new(0, 6, -d))
-	table.insert(offsets, Vector3.new(d, 6, d))
-	table.insert(offsets, Vector3.new(-d, 6, d))
-	table.insert(offsets, Vector3.new(d, 6, -d))
-	table.insert(offsets, Vector3.new(-d, 6, -d))
-end
-
-local function updateLightPositions(force)
-	if not hrp and char then
-		hrp = char:FindFirstChild("HumanoidRootPart")
-	end
-	if not hrp then return end
-
-	local pos = hrp.Position
-	if force or (pos - lastLightPos).Magnitude > 15 then
-		lastLightPos = pos
-		for _, v in ipairs(lights) do
-			v.part.CFrame = CFrame.new(pos + v.offset)
-		end
-	end
 end
 
 local function toggleLights(state)
@@ -145,6 +117,18 @@ local function toggleLights(state)
 			folder.Name = "Fullbright_Grid"
 			folder.Parent = Workspace
 
+			local offsets = { Vector3.new(0, 6, 0) }
+			for d = 110, 800, 110 do
+				table.insert(offsets, Vector3.new(d, 6, 0))
+				table.insert(offsets, Vector3.new(-d, 6, 0))
+				table.insert(offsets, Vector3.new(0, 6, d))
+				table.insert(offsets, Vector3.new(0, 6, -d))
+				table.insert(offsets, Vector3.new(d, 6, d))
+				table.insert(offsets, Vector3.new(-d, 6, d))
+				table.insert(offsets, Vector3.new(d, 6, -d))
+				table.insert(offsets, Vector3.new(-d, 6, -d))
+			end
+
 			for _, off in ipairs(offsets) do
 				local p = Instance.new("Part")
 				p.Size = Vector3.new(1, 1, 1)
@@ -164,7 +148,13 @@ local function toggleLights(state)
 			end
 		end
 
-		updateLightPositions(true)
+		lastLightPos = Vector3.new(0, -9e9, 0)
+		if hrp then
+			lastLightPos = hrp.Position
+			for _, v in ipairs(lights) do
+				v.part.CFrame = CFrame.new(hrp.Position + v.offset)
+			end
+		end
 	else
 		if #lights > 0 and lights[1].folder then
 			lights[1].folder:Destroy()
@@ -179,17 +169,8 @@ local function formatName(rawName)
 	return clean:sub(1, 1):upper() .. clean:sub(2)
 end
 
-local function removeESP(obj)
-	local data = espData[obj]
-	if not data then return end
-	if data.conn then data.conn:Disconnect() end
-	if data.destroyingConn then data.destroyingConn:Disconnect() end
-	if data.hl then data.hl:Destroy() end
-	if data.bb then data.bb:Destroy() end
-	espData[obj] = nil
-end
-
 local function addESP(obj)
+	if not espOn then return end
 	if not obj:IsA("Model") or not targets[obj.Name] or espData[obj] then return end
 
 	local root = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
@@ -278,6 +259,16 @@ local function addESP(obj)
 	}
 end
 
+local function refreshESP()
+	clearAllESP()
+	if not espOn then return end
+	for _, v in ipairs(Workspace:GetDescendants()) do
+		if targets[v.Name] then
+			addESP(v)
+		end
+	end
+end
+
 local function isVisible(part)
 	if not wallCheck then return true end
 	if not camera or not part then return false end
@@ -313,10 +304,10 @@ local function getClosestTargetPart()
 	local bestPart = nil
 	local bestDist = aimFOV
 
-	for obj in pairs(espData) do
-		if enemyTargets[obj.Name] and obj.Parent then
-			local targetHum = obj:FindFirstChildOfClass("Humanoid")
-			local aimPart = getAimPoint(obj)
+	for _, v in ipairs(Workspace:GetDescendants()) do
+		if v:IsA("Model") and enemyTargets[v.Name] then
+			local targetHum = v:FindFirstChildOfClass("Humanoid")
+			local aimPart = getAimPoint(v)
 			if targetHum and targetHum.Health > 0 and aimPart and isVisible(aimPart) then
 				local screenPos, onScreen = camera:WorldToViewportPoint(aimPart.Position)
 				if onScreen and screenPos.Z > 0 then
@@ -333,14 +324,169 @@ local function getClosestTargetPart()
 	return bestPart
 end
 
-for _, v in ipairs(Workspace:GetDescendants()) do
-	if targets[v.Name] then
-		addESP(v)
+env.CleanupOldScript = function()
+	for _, c in ipairs(conns) do
+		c:Disconnect()
 	end
+	table.clear(conns)
+	clearAllESP()
+	toggleLights(false)
+	pcall(function()
+		Library:Unload()
+	end)
 end
 
+local Window = Library:CreateWindow({
+	Title = "Combat & Visuals",
+	Center = true,
+	AutoShow = true,
+	TabPadding = 8,
+	MenuFadeTime = 0.2
+})
+
+local Tabs = {
+	Main = Window:AddTab("Main"),
+	Visuals = Window:AddTab("Visuals"),
+	UISettings = Window:AddTab("UI Settings")
+}
+
+local AimGroup = Tabs.Main:AddLeftGroupbox("Aimbot")
+AimGroup:AddToggle("AimbotToggle", {
+	Text = "Aimbot (Hold RMB)",
+	Default = false
+}):AddKeyPicker("AimbotKeybind", {
+	Default = "Z",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Aimbot Toggle",
+	NoUI = false,
+	Callback = function(Value)
+		aimbotOn = Value
+	end
+})
+
+Toggles.AimbotToggle:OnChanged(function(val)
+	aimbotOn = val
+end)
+
+AimGroup:AddToggle("WallCheckToggle", {
+	Text = "Wall Check",
+	Default = false,
+	Callback = function(val)
+		wallCheck = val
+	end
+})
+
+AimGroup:AddSlider("AimSmoothSlider", {
+	Text = "Smoothness",
+	Default = 0.5,
+	Min = 0.05,
+	Max = 1,
+	Rounding = 2,
+	Compact = false,
+	Callback = function(val)
+		aimSmoothness = val
+	end
+})
+
+AimGroup:AddSlider("AimFOVSlider", {
+	Text = "FOV Radius",
+	Default = 450,
+	Min = 50,
+	Max = 1000,
+	Rounding = 0,
+	Compact = false,
+	Callback = function(val)
+		aimFOV = val
+	end
+})
+
+local MoveGroup = Tabs.Main:AddRightGroupbox("Movement")
+MoveGroup:AddToggle("SpeedToggle", {
+	Text = "Speed Boost",
+	Default = false
+}):AddKeyPicker("SpeedKeybind", {
+	Default = "Comma",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Speed Toggle",
+	NoUI = false,
+	Callback = function(val)
+		speedOn = val
+	end
+})
+
+Toggles.SpeedToggle:OnChanged(function(val)
+	speedOn = val
+end)
+
+MoveGroup:AddSlider("SpeedMultSlider", {
+	Text = "Speed Multiplier",
+	Default = 1.4,
+	Min = 1,
+	Max = 3,
+	Rounding = 1,
+	Compact = false,
+	Callback = function(val)
+		speedMult = val
+	end
+})
+
+local EspGroup = Tabs.Visuals:AddLeftGroupbox("ESP")
+EspGroup:AddToggle("ESPToggle", {
+	Text = "AI ESP & Health Bar",
+	Default = true,
+	Callback = function(val)
+		espOn = val
+		refreshESP()
+	end
+})
+
+local LightGroup = Tabs.Visuals:AddRightGroupbox("Lighting")
+LightGroup:AddToggle("LightsToggle", {
+	Text = "Fullbright & No Fog",
+	Default = false
+}):AddKeyPicker("LightsKeybind", {
+	Default = "Quote",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Lights Toggle",
+	NoUI = false,
+	Callback = function(val)
+		lightOn = val
+		toggleLights(lightOn)
+	end
+})
+
+Toggles.LightsToggle:OnChanged(function(val)
+	lightOn = val
+	toggleLights(lightOn)
+end)
+
+local MenuGroup = Tabs.UISettings:AddLeftGroupbox("Menu")
+MenuGroup:AddButton("Unload Script", function()
+	env.CleanupOldScript()
+end)
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", {
+	Default = "RightShift",
+	NoUI = true,
+	Text = "Menu keybind"
+})
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("CombatVisualsLib")
+SaveManager:SetFolder("CombatVisualsLib/main")
+SaveManager:ApplyToTab(Tabs.UISettings)
+
+refreshESP()
+
 table.insert(conns, Workspace.DescendantAdded:Connect(function(v)
-	if targets[v.Name] then
+	if espOn and targets[v.Name] then
 		task.wait(0.1)
 		addESP(v)
 	end
@@ -348,18 +494,7 @@ end))
 
 table.insert(conns, UIS.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
-
-	if input.KeyCode == Enum.KeyCode.Quote then
-		lightOn = not lightOn
-		toggleLights(lightOn)
-		print("Lights:", lightOn)
-	elseif input.KeyCode == Enum.KeyCode.Comma then
-		speedOn = not speedOn
-		print("Speed:", speedOn)
-	elseif input.KeyCode == Enum.KeyCode.Z then
-		aimbotOn = not aimbotOn
-		print("Aimbot:", aimbotOn, "mousemoverel:", moveMouseRel ~= nil)
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		aiming = true
 	end
 end))
@@ -398,9 +533,15 @@ table.insert(conns, RunService.RenderStepped:Connect(function(dt)
 end))
 
 table.insert(conns, RunService.Heartbeat:Connect(function()
-	if lightOn and #lights > 0 then
-		updateLightPositions(false)
+	if lightOn and #lights > 0 and hrp then
+		local pos = hrp.Position
+		if (pos - lastLightPos).Magnitude > 15 then
+			lastLightPos = pos
+			for _, v in ipairs(lights) do
+				v.part.CFrame = CFrame.new(pos + v.offset)
+			end
+		end
 	end
 end))
 
-print("Loaded script :)")
+Library:Notify("Loaded LinoriaLib UI", 3)
