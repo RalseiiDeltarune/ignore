@@ -20,6 +20,7 @@ local conns = {}
 local espData = {}
 local lights = {}
 local fogCleared = false
+local lastLightPos = Vector3.new(0, -9e9, 0)
 
 local targets = {
 	ai_arsonist = true,
@@ -36,8 +37,8 @@ local targets = {
 local function cacheCharacter(newChar)
 	char = newChar
 	if char then
-		hrp = char:WaitForChild("HumanoidRootPart", 5)
-		hum = char:WaitForChild("Humanoid", 5)
+		hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart", 10)
+		hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 10)
 	else
 		hrp, hum = nil, nil
 	end
@@ -60,6 +61,9 @@ env.CleanupOldScript = function()
 	end
 	table.clear(espData)
 
+	if #lights > 0 and lights[1].folder then
+		lights[1].folder:Destroy()
+	end
 	for _, v in ipairs(lights) do
 		if v.part then v.part:Destroy() end
 	end
@@ -76,6 +80,21 @@ for d = 110, 800, 110 do
 	table.insert(offsets, Vector3.new(-d, 6, d))
 	table.insert(offsets, Vector3.new(d, 6, -d))
 	table.insert(offsets, Vector3.new(-d, 6, -d))
+end
+
+local function updateLightPositions(force)
+	if not hrp and char then
+		hrp = char:FindFirstChild("HumanoidRootPart")
+	end
+	if not hrp then return end
+
+	local pos = hrp.Position
+	if force or (pos - lastLightPos).Magnitude > 15 then
+		lastLightPos = pos
+		for _, v in ipairs(lights) do
+			v.part.CFrame = CFrame.new(pos + v.offset)
+		end
+	end
 end
 
 local function toggleLights(state)
@@ -117,11 +136,14 @@ local function toggleLights(state)
 				table.insert(lights, { part = p, offset = off, folder = folder })
 			end
 		end
+
+		updateLightPositions(true)
 	else
 		if #lights > 0 and lights[1].folder then
 			lights[1].folder:Destroy()
 		end
 		table.clear(lights)
+		lastLightPos = Vector3.new(0, -9e9, 0)
 	end
 end
 
@@ -261,16 +283,9 @@ table.insert(conns, RunService.RenderStepped:Connect(function(dt)
 	end
 end))
 
-local lastLightPos = Vector3.zero
 table.insert(conns, RunService.Heartbeat:Connect(function()
-	if lightOn and #lights > 0 and hrp then
-		local pos = hrp.Position
-		if (pos - lastLightPos).Magnitude > 15 then
-			lastLightPos = pos
-			for _, v in ipairs(lights) do
-				v.part.CFrame = CFrame.new(pos + v.offset)
-			end
-		end
+	if lightOn and #lights > 0 then
+		updateLightPositions(false)
 	end
 end))
 
